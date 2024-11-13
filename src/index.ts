@@ -6,9 +6,9 @@ import jwkToPem from 'jwk-to-pem';
 import axios from 'axios';
 
 // Import your existing models
-import User from './models/user';
-import SuperUser from './models/superUser';
 
+import SuperUser from './models/superUser';
+import User from './models/user';
 // JWKS URL and cache
 const jwksUrl =
   'https://cognito-idp.us-east-2.amazonaws.com/us-east-2_24kujMFaY/.well-known/jwks.json';
