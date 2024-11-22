@@ -1,35 +1,35 @@
 /** @format */
-
 import mongoose from 'mongoose';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import jwkToPem from 'jwk-to-pem';
 import axios from 'axios';
-
-// Import your existing models
-
 import SuperUser from './models/superUser';
 import User from './models/user';
-// JWKS URL and cache
+
 const jwksUrl =
   'https://cognito-idp.us-east-2.amazonaws.com/us-east-2_24kujMFaY/.well-known/jwks.json';
 const tokenCache: Record<string, any> = {};
 let jwksCache: any = null;
-let isConnectedToDatabase = false;
 
-// Function to connect to MongoDB (called internally)
-const connectToDatabase = async () => {
-  if (!isConnectedToDatabase) {
+let synergyConnection: mongoose.Connection | null = null;
+
+/**
+ * Create and cache a connection to the synergyDashboard database.
+ */
+const getSynergyConnection = async () => {
+  if (!synergyConnection) {
     try {
-      await mongoose.connect(
-        'mongodb+srv://claude_lamarre:Master7001@synergydash-prod-01.amkflq9.mongodb.net/synergyDashboard'
+      synergyConnection = mongoose.createConnection(
+        'mongodb+srv://claude_lamarre:Master7001@synergydash-prod-01.amkflq9.mongodb.net/synergyDashboard',
+        {}
       );
-      isConnectedToDatabase = true;
-      console.log('Connected to MongoDB within the library');
+      console.log('Connected to synergyDashboard database');
     } catch (error) {
-      console.error('MongoDB connection error:', error);
-      throw new Error('Failed to connect to MongoDB');
+      console.error('Failed to connect to synergyDashboard database:', error);
+      throw new Error('Database connection error');
     }
   }
+  return synergyConnection;
 };
 
 // Fetch and cache JWKS
@@ -62,15 +62,15 @@ export const authenticateToken = async (
   if (scheme !== 'Bearer' || !accessToken)
     return onError(401, 'Bearer token required');
 
-  // Initialize database connection if not already connected
-  await connectToDatabase();
-
-  // Check token cache first
-  if (tokenCache[accessToken]) {
-    return onSuccess(tokenCache[accessToken]);
-  }
-
   try {
+    // Establish connection to the synergyDashboard database
+    const synergyConnection = await getSynergyConnection();
+
+    // Check token cache
+    if (tokenCache[accessToken]) {
+      return onSuccess(tokenCache[accessToken]);
+    }
+
     const decodedToken = jwt.decode(accessToken, { complete: true });
     if (!decodedToken || !decodedToken.header)
       throw new Error('Invalid token format');
@@ -84,9 +84,17 @@ export const authenticateToken = async (
         if (err) return onError(401, 'Invalid or expired token');
 
         const username = (decoded as JwtPayload).username;
+
+        // Query using the connection
+        const UserModel = synergyConnection.model('User', User.schema);
+        const SuperUserModel = synergyConnection.model(
+          'SuperUser',
+          SuperUser.schema
+        );
+
         let userDetails =
-          (await User.findOne({ username }).lean()) ||
-          (await SuperUser.findOne({ username }).lean());
+          (await UserModel.findOne({ username }).lean()) ||
+          (await SuperUserModel.findOne({ username }).lean());
 
         if (!userDetails) return onError(404, 'User not found in database');
 
